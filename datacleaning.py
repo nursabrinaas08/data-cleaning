@@ -11,7 +11,6 @@ st.write("Upload a **CSV** or an **EXCEL** File Containing Raw Data To Get A Cle
 # File uploader for CSV or Excel
 uploaded = st.file_uploader("Upload CSV or Excel File", type=['csv', 'xlsx', 'xls'])
 
-
 if uploaded is not None:
     try:
         # Read file into dataframe
@@ -20,7 +19,7 @@ if uploaded is not None:
             # converting bool columns as str
             bool_cols = df.select_dtypes(include=['bool']).columns
             df[bool_cols] =  df[bool_cols].astype('str')
-        elif uploaded.name.endswith('xlsx', 'xls'):
+        elif uploaded.name.endswith(('.xlsx', '.xls')):
             df = pd.read_excel(uploaded)
             # converting bool columns as str
             bool_cols = df.select_dtypes(include=['bool']).columns
@@ -37,47 +36,109 @@ if uploaded is not None:
     st.write("### Preview of data")
     st.dataframe(df.head())
 
+    st.write("### Data Overview")
+    st.write("Number of Rows : ",df.shape[0])
+    st.write("Number of Columns : ", df.shape[1])
+    st.write("Number of Missing Values : ",df.isnull().sum().sum())
+    st.write("Total Duplicate Rows : ",df.duplicated().sum())
+
     # Display missing values and duplicate info
     st.write("Missing values per column:")
     st.write(df.isnull().sum())
-    st.write(f"Total duplicate rows: {df.duplicated().sum()}")
 
-    # Button to remove missing values
-    if st.button("Click Here To Remove Missing Values"):
-        df_clean = df.dropna()
-        st.write("### Data after removing missing values")
-        st.write(df_clean)
+    total_missing = df.isnull().sum().sum()
+    total_duplicates = df.duplicated().sum()
     
-    # Button to handle missing values (fill with mean for numeric)
-    if st.button("Click Here To Handle Missing Values"):
-        df_clean = df.fillna(df.mean(numeric_only=True))
-        st.write("### Data after handling missing values (filled with mean)")
-        st.write(df_clean)
-        
-    # Button to remove duplicate rows
-    if st.button("Click Here To Remove Duplicate Values"):
-        df_clean = df.drop_duplicates()
-        st.write("### Data after removing duplicates")
-        st.write(df_clean)
-    
-    # Provide option to download cleaned data
-    if 'df_clean' in locals():
-        to_download = df_clean
+    st.divider()
+
+    if total_missing == 0 and total_duplicates == 0:
+        st.success("🎉 Data is clean! No missing or duplicate values found.")
     else:
-        to_download = df
+        st.subheader("⚙️ Cleaning Options")
 
-    def to_excel(df):
-        output = BytesIO()
-        writer = pd.ExcelWriter(output, engine='xlsxwriter')
-        df.to_excel(writer, index=False, sheet_name='Sheet1')
-        writer.close()
-        processed_data = output.getvalue()
-        return processed_data
-    
-    st.download_button(label="Download Your Cleaned CSV / Excel File",
-                       data=to_excel(to_download),
-                       file_name='cleaned_data.xlsx',
-                       mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        col1, col2 = st.columns(2)
+
+        # Missing values handling
+        with col1:
+            handle_missing = st.checkbox("Handle Missing Values")
+
+            if handle_missing:
+                missing_option = st.selectbox(
+                    "Choose missing value handling method",
+                    [
+                        "Drop rows with missing values",
+                        "Fill with mean (numeric)",
+                        "Fill with median (numeric)",
+                        "Fill with mode",
+                        "Fill with custom value"
+                    ]
+                )
+
+                if missing_option == "Fill with custom value":
+                    custom_value = st.text_input("Enter custom value")
+
+        # Duplicate handling
+        with col2:
+            remove_duplicates = st.checkbox("Remove Duplicate Rows")
+
+        # 3. Apply cleaning
+        cleaned_df = df.copy()
+
+        if handle_missing:
+            if missing_option == "Drop rows with missing values":
+                cleaned_df = cleaned_df.dropna()
+
+            elif missing_option == "Fill with mean (numeric)":
+                cleaned_df = cleaned_df.fillna(cleaned_df.mean(numeric_only=True))
+
+            elif missing_option == "Fill with median (numeric)":
+                cleaned_df = cleaned_df.fillna(cleaned_df.median(numeric_only=True))
+
+            elif missing_option == "Fill with mode":
+                cleaned_df = cleaned_df.fillna(cleaned_df.mode().iloc[0])
+
+            elif missing_option == "Fill with custom value":
+                cleaned_df = cleaned_df.fillna(custom_value)
+
+        if remove_duplicates:
+            cleaned_df = cleaned_df.drop_duplicates()
+
+        st.write("### ✅ Cleaned Data Preview")
+        st.dataframe(cleaned_df)
+
+        st.write("### Cleaned Data Summary")
+        st.write("Number of Rows : ",cleaned_df.shape[0])
+        st.write("Number of Columns : ",cleaned_df.shape[1])
+        st.write("Number of Missing Values : ",cleaned_df.isnull().sum().sum())
+        st.write("Total Duplicate Rows : ",cleaned_df.duplicated().sum())
+        st.write("Missing values per column:")
+        st.write(cleaned_df.isnull().sum())
+
+        # 4. Download cleaned data
+        def download_file(df, uploaded):
+            buffer = BytesIO()
+
+            if uploaded.name.endswith('.csv'):
+                df.to_csv(buffer, index=False)
+                mime = "text/csv"
+                file_name = "cleaned_data.csv"
+            else:
+                with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                    df.to_excel(writer, index=False)
+                mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                file_name = "cleaned_data.xlsx"
+
+            buffer.seek(0)
+            return buffer, file_name, mime
+
+        buffer, file_name, mime = download_file(cleaned_df, uploaded)
+        
+        st.download_button(
+            label="⬇️ Download Cleaned Data",
+            data=buffer,
+            file_name=file_name,
+            mime=mime
+        )
     
 else:
   st.info("Please Upload A CSV Or An Excel FIle To Get Started")
